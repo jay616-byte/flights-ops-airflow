@@ -4,18 +4,25 @@ from pathlib import Path
 
 def run_silver_transform(**context):
     execution_date = context["ds_nodash"]
+    ti = context["ti"]
 
-    bronze_path = Path("/opt/airflow/data/bronze")
+    # PULL bronze file path from XCom
+    bronze_file = ti.xcom_pull(
+        key="bronze_file",
+        task_ids="bronze_ingestion"
+    )
+
+    if not bronze_file:
+        raise ValueError("Bronze file path not found in XCom")
+
     silver_path = Path("/opt/airflow/data/silver")
     silver_path.mkdir(parents=True, exist_ok=True)
 
-    # Load latest bronze file
-    latest_file = sorted(bronze_path.glob("flights_*.json"))[-1]
-
-    with open(latest_file) as f:
+    # Load bronze JSON
+    with open(bronze_file) as f:
         raw = json.load(f)
 
-    # Convert OpenSky "states" to DataFrame
+    # Convert OpenSky 'states' to DataFrame
     df_raw = pd.DataFrame(raw["states"])
 
     df_raw.columns = [
@@ -45,8 +52,8 @@ def run_silver_transform(**context):
     output_file = silver_path / f"flights_silver_{execution_date}.csv"
     df.to_csv(output_file, index=False)
 
-    # PUSH XCOM
-    context["ti"].xcom_push(
+    # PUSH silver file path to XCom
+    ti.xcom_push(
         key="silver_file",
         value=str(output_file)
     )
